@@ -44,7 +44,7 @@ export class CloudResumeCdkStack extends Stack {
     new route53.AaaaRecord(this, "ResumeCloudfrontRecord", {
       zone: hostedZone,
       recordName: 'test.adamljayne.com',
-      target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(resumeDistrobution))
+      target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(resumeDistrobution)),
     });
 
   }
