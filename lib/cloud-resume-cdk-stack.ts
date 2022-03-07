@@ -1,28 +1,16 @@
 import { Stack, StackProps, RemovalPolicy, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
-import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
-
-
-// import * as sqs from 'aws-cdk-lib/aws-sqs';
-
-declare const hostedZone: route53.HostedZone;
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as targets from 'aws-cdk-lib/aws-route53-targets'
 
 export class CloudResumeCdkStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
-
-    // const resumeCertificate = new acm.DnsValidatedCertificate(this, 'resume-site-cert', {
-    //   domainName: 'www.adamljayne.com',
-    //   hostedZone,
-    //   subjectAlternativeNames: [
-    //     'test.adamljayne.com',
-    //   ]
-    // });
 
     let resumeBucket = new s3.Bucket(this, 'ResumeBucket', {
       publicReadAccess: true,
@@ -37,23 +25,27 @@ export class CloudResumeCdkStack extends Stack {
       destinationBucket: resumeBucket
     });
 
-    new CfnOutput(this, 'WebsiteUrl', {
-      value: resumeBucket.bucketWebsiteUrl
+    const hostedZone = route53.HostedZone.fromLookup(this, "DomainZone", { domainName: 'adamljayne.com' });
+
+    const resumeCertificate = new acm.DnsValidatedCertificate(this, 'ResumeCertificate', {
+      domainName: 'test.adamljayne.com',
+      hostedZone: hostedZone,
+      cleanupRoute53Records: true
     });
 
-    // new cloudfront.Distribution(this, 'ResumeDistrobution', {
-    //   defaultBehavior: {
-    //     origin: new origins.S3Origin(resumeBucket),
-    //   },
-    //   certificate: resumeCertificate
-    // });
+    const resumeDistrobution = new cloudfront.Distribution(this, 'ResumeDistrobution', {
+      defaultBehavior: {
+        origin: new origins.S3Origin(resumeBucket),
+      },
+      domainNames: ['test.adamljayne.com'],
+      certificate: resumeCertificate
+    });
 
-    // new route53.ARecord(this, 'resumeS3Domain', {
-    //   zone: hostedZone,
-    //   target: route53.RecordTarget.fromAlias(resumeBucket.urlForObject)
-    // });
+    new route53.AaaaRecord(this, "ResumeCloudfrontRecord", {
+      zone: hostedZone,
+      recordName: 'test.adamljayne.com',
+      target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(resumeDistrobution))
+    });
 
-
-    
   }
 }
