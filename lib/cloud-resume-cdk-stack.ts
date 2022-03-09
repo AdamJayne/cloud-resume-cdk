@@ -1,50 +1,76 @@
-import { Stack, StackProps, RemovalPolicy, CfnOutput } from 'aws-cdk-lib';
+import { Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import { Function, Runtime, Code } from 'aws-cdk-lib/aws-lambda';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as apiGateway from 'aws-cdk-lib/aws-apigateway';
+import * as dynamoDB from 'aws-cdk-lib/aws-dynamodb';
 import * as route53 from 'aws-cdk-lib/aws-route53';
-import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
-import * as targets from 'aws-cdk-lib/aws-route53-targets'
+import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
+import * as path from 'path';
+
+import { StaticWebApplication } from './constructs/client-bucket';
 
 export class CloudResumeCdkStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    let resumeBucket = new s3.Bucket(this, 'ResumeBucket', {
-      publicReadAccess: true,
-      websiteIndexDocument: 'index.html',
-      websiteErrorDocument: 'index.html', 
-      removalPolicy: RemovalPolicy.DESTROY,
-      autoDeleteObjects: true
+    const baseDomain = 'adamljayne.com';
+    const websiteDomain = `resume.${ baseDomain }`;
+    const apiDomain = `resumeapi.${ baseDomain }`;
+
+    const hostedZone = route53.HostedZone.fromLookup(this, "DomainZone", { domainName: baseDomain });
+
+    const certificate = new acm.DnsValidatedCertificate(this, `-WebApplicationCertificate`, {
+      domainName: `*.${ baseDomain }`,
+      cleanupRoute53Records: true,
+      hostedZone
     });
 
-    new s3deploy.BucketDeployment(this, 'ResumeClientBucketDeployment', {
-      sources: [s3deploy.Source.asset('./lib/client')],
-      destinationBucket: resumeBucket
+    // This was done to test my understanding of how the Construct class works
+    // The StaticWebApplication class represents the creation and deployment of a static web app
+    new StaticWebApplication(this, 'Resume', {
+      domainName: websiteDomain,
+      webAppDirectory: path.join(__dirname, '/client'),
+      indexDocument: 'resume.html',
+      errorDocument: 'resume.html',
+      hostedZone,
+      acmCertificate: certificate,
     });
 
-    const hostedZone = route53.HostedZone.fromLookup(this, "DomainZone", { domainName: 'adamljayne.com' });
-
-    const resumeCertificate = new acm.DnsValidatedCertificate(this, 'ResumeCertificate', {
-      domainName: 'test.adamljayne.com',
-      hostedZone: hostedZone,
-      cleanupRoute53Records: true
+    // DynamoDB Instance
+    const resumeDatabase = new dynamoDB.Table(this, 'ResumeTable', {
+      tableName: 'test-table',
+      partitionKey: { name: 'id', type: dynamoDB.AttributeType.STRING },
+      billingMode: dynamoDB.BillingMode.PAY_PER_REQUEST
     });
 
-    const resumeDistrobution = new cloudfront.Distribution(this, 'ResumeDistrobution', {
-      defaultBehavior: {
-        origin: new origins.S3Origin(resumeBucket),
-      },
-      domainNames: ['test.adamljayne.com'],
-      certificate: resumeCertificate
+    // Lambda Function with API Gateway
+    const resumeViewsFunction = new Function(this, 'ResumeViewCountFunction', {
+      runtime: Runtime.NODEJS_14_X,
+      handler: 'page-views.handler',
+      code: Code.fromAsset(path.join(__dirname, 'lambda'))
     });
 
-    new route53.AaaaRecord(this, "ResumeCloudfrontRecord", {
+    // Granting the Lambda function READ/WRITE to the DynamoDB Instance
+    resumeDatabase.grantReadWriteData(resumeViewsFunction);
+
+    const resumeApiGateway = new apiGateway.RestApi(this, 'ResumeApiGateway', {
+      restApiName: 'Resume Api Test',
+      description: 'Testing purposes',
+      domainName: {
+        domainName: apiDomain,
+        certificate
+      }
+    });
+
+    const resumeViewsLambdaGatewayIntegration = new apiGateway.LambdaIntegration(resumeViewsFunction);
+
+    resumeApiGateway.root.addMethod('GET', resumeViewsLambdaGatewayIntegration);
+
+    new route53.ARecord(this, 'ResumeApiGatewayCustomDomainRecord', {
       zone: hostedZone,
-      recordName: 'test.adamljayne.com',
-      target: route53.RecordTarget.fromAlias(new targets.CloudFrontTarget(resumeDistrobution))
+      recordName: apiDomain,
+      target: route53.RecordTarget.fromAlias(new route53Targets.ApiGateway(resumeApiGateway))
     });
 
   }
