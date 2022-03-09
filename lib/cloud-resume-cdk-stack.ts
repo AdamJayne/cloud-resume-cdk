@@ -98,7 +98,7 @@ export class CloudResumeCdkStack extends Stack {
           "AdamJayne/cloud-resume-cdk",
           "main"
         ),
-        commands: ["npm ci", "npm run build", "npm cdk synth"],
+        commands: ["npm ci", "npm run build", "npm run cdk synth"],
       }),
     });
   }
