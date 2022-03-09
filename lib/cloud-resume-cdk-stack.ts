@@ -95,7 +95,7 @@ export class CloudResumeCdkStack extends Stack {
       pipelineName: "ResumeAppPipeline",
       synth: new pipelines.ShellStep("CDK Synth", {
         input: pipelines.CodePipelineSource.gitHub(
-          "AdamJayne/resume-challenge-cdk",
+          "AdamJayne/cloud-resume-cdk",
           "main"
         ),
         commands: ["npm ci", "npm run build", "npm cdk synth"],
